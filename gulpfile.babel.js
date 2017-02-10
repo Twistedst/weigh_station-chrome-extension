@@ -39,17 +39,6 @@ gulp.task('lint', lint('app/scripts.babel/**/*.js', {
   }
 }));
 
-gulp.task('includeFiles', () => {
-  gulp.src("app/scripts/main.js")
-    .pipe(include({
-      extensions: "js",
-      hardFail: true,
-      includePaths: [
-        __dirname + "/bower_components/text-encoding"
-      ]
-    }))
-    .pipe(gulp.dest("dist/vendor"));
-});
 gulp.task('images', () => {
   return gulp.src('app/images/**/*')
     .pipe($.if($.if.isFile, $.cache($.imagemin({
@@ -141,7 +130,7 @@ gulp.task('package', function () {
 
 gulp.task('build', (cb) => {
   runSequence(
-    'lint', 'babel', 'includeFiles', 'chromeManifest',
+    'lint', 'babel', 'chromeManifest',
     ['html', 'images', 'extras'],
     'size', cb);
 });

@@ -1,3 +1,6 @@
+/**
+ * Created by stevenhawley on 2/8/17.
+ */
 'use strict';
 
-console.log('\'Allo \'Allo! Popup');
+console.log('Popup');

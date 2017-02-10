@@ -1,76 +1,66 @@
-const DEVICE_PATH   = '/dev/tty.usbserial';
-const CONNECTION_ID = '10001';
-const serial        = chrome.serial;
+const DEVICE_PATH = '/dev/tty.usbserial';
+const serial = chrome.serial;
 const BAUD_RATE = 19200;
-
-let connection = new SerialConnection();
+const regex = /([0-9.]+) (lb|kg) NET/g;
 
 
 /* Interprets an ArrayBuffer as UTF-8 encoded string data. */
-var ab2str = function (buf) {
-   // var bufView = new Uint8Array(buf);
-  // var encodedString = String.fromCharCode.apply(null, bufView);
-  // return decodeURIComponent(escape(encodedString));
-  var dataView = new DataView(buf);
-  // console.log(dataView.getUint8());
-  var string = new TextDecoder('utf-8').decode(dataView);
-  // console.log(string);
-  return string;
+let arrayBufferToString = function (buffer) {
+
+  let dataView = new DataView(buffer);
+  let decodedString = new TextDecoder('utf-8').decode(dataView);
+  return decodedString;
 };
 
 /* Converts a string to UTF-8 encoding in a Uint8Array; returns the array buffer. */
-var str2ab = function(str) {
-  // var encodedString = unescape(encodeURIComponent(str));
-  // var bytes = new Uint8Array(encodedString.length);
-  // for (var i = 0; i < encodedString.length; ++i) {
-  //   bytes[i] = encodedString.charCodeAt(i);
-  // }
-  // return bytes.buffer;
-  var uint8array = new TextEncoder().encode(str);
-  console.log(uint8array);
+let stringToArrayBuffer = function (str) {
+
+  let uint8array = new TextEncoder().encode(str);
   return uint8array;
 };
 
-var SerialConnection = function () {
-  this.connectionId        = -1;
-  this.lineBuffer          = '';
-  this.boundOnReceive      = this.onReceive.bind(this);
+/* Serial Connection Object*/
+let SerialConnection = function () {
+  this.connectionId = -1;
+  this.lineBuffer = '';
+  this.boundOnReceive = this.onReceive.bind(this);
   this.boundOnReceiveError = this.onReceiveError.bind(this);
-  this.onConnect           = new chrome.Event();
-  this.onReadLine          = new chrome.Event();
-  this.onError             = new chrome.Event();
+  this.validateLine = this.validateLine.bind(this);
+  this.onConnect = new chrome.Event();
+  this.onReadLine = new chrome.Event();
+  this.onError = new chrome.Event();
 };
 
+// onConnect Event Handler
 SerialConnection.prototype.onConnectComplete = function (connectionInfo) {
   if (!connectionInfo) {
     log('Connection failed.');
     return;
   }
   this.connectionId = connectionInfo.connectionId;
-  chrome.serial.getInfo(this.connectionId, function(info){
-    console.log('INFO');
-    console.log(info);
-  });
+  // chrome.serial.getInfo(this.connectionId, function (info) {
+  //   console.log('INFO');
+  //   console.log(info);
+  // });
   chrome.serial.onReceive.addListener(this.boundOnReceive);
   chrome.serial.onReceiveError.addListener(this.boundOnReceiveError);
   this.onConnect.dispatch();
 };
 
+// onReceive Event Handler
 SerialConnection.prototype.onReceive = function (receiveInfo) {
   if (receiveInfo.connectionId !== this.connectionId) {
     return;
   }
-  // console.log(receiveInfo.data);
-  this.lineBuffer += ab2str(receiveInfo.data);
+  this.lineBuffer += arrayBufferToString(receiveInfo.data);
 
-  var index;
+  let index;
   while ((index = this.lineBuffer.indexOf('\n')) >= 0) {
-    var line = this.lineBuffer.substr(0, index + 1);
-    console.log('Data: ' + line);
+    let line = this.lineBuffer.substr(0, index + 1);
     this.onReadLine.dispatch(line);
     this.lineBuffer = this.lineBuffer.substr(index + 1);
+    // console.log(line);
   }
-  console.log(this.lineBuffer);
 };
 
 SerialConnection.prototype.onReceiveError = function (errorInfo) {
@@ -80,14 +70,14 @@ SerialConnection.prototype.onReceiveError = function (errorInfo) {
 };
 
 SerialConnection.prototype.connect = function (path) {
-  serial.connect(path, {bitrate: BAUD_RATE}, this.onConnectComplete.bind(this))
+  serial.connect(path, { bitrate: BAUD_RATE }, this.onConnectComplete.bind(this))
 };
 
 SerialConnection.prototype.send = function (msg) {
   if (this.connectionId < 0) {
     throw 'Invalid connection';
   }
-  serial.send(this.connectionId, str2ab(msg), function () {
+  serial.send(this.connectionId, stringToArrayBuffer(msg), function () {
   });
 };
 
@@ -99,24 +89,66 @@ SerialConnection.prototype.disconnect = function () {
   });
 };
 
+// Use Regex to get only the information we want from the scale.
+SerialConnection.prototype.validateLine = (line) => {
+  let matched,
+    wholeMatch,
+    weight,
+    units;
+
+  while ((matched = regex.exec(line)) !== null) {
+    // This is necessary to avoid infinite loops with zero-width matches
+    if (matched.index === regex.lastIndex) {
+      regex.lastIndex++;
+    }
+    wholeMatch = matched[0];
+    weight = matched[1];
+    units = matched[2];
+
+    // The result can be accessed through the `matched`-variable.
+    matched.forEach((match, groupIndex) => {
+      console.log(`Found match, group ${groupIndex}: ${match}`);
+    });
+  }
+  return weight;
+};
+/* Main Function */
+let connection = new SerialConnection();
+
+// onConnect Listener
 connection.onConnect.addListener(function () {
-  log('connected to: ' + DEVICE_PATH);
+  log('connected to: Weigh Station: ' + DEVICE_PATH);
   // connection.send('Hello Weigh Station');
 });
 
+// onReadLine Listener
 connection.onReadLine.addListener(function (line) {
-  log('read line: ' + line);
-});
+  // console.log(line);
 
-chrome.serial.getDevices(function(devices) {
-  for (var i = 0; i < devices.length; i++) {
-    console.log(devices[i])
+  let validatedLine = connection.validateLine(line);
+  if (validatedLine) {
+    log(validatedLine);
   }
 });
 
+// Get all Devices available for connect
+// serial.getDevices(function (devices) {
+//   for (let i = 0; i < devices.length; i++) {
+//     console.log(devices[i])
+//   }
+// });
+
+// Connect to the designated device path
 connection.connect(DEVICE_PATH);
 
 function log(msg) {
-  var buffer = document.querySelector('#buffer');
+  let buffer = document.querySelector('#buffer');
   buffer.innerHTML += msg + '<br/>';
+}
+
+/* Pass the weight into the UI div
+   'scale_reading' for the old UI */
+function injectWeightIntoUI(weight){
+  $('scale_reading').update(weight);
+  $('scale_reading').innerHTML;
 }
